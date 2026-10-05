@@ -83,3 +83,6 @@ reports/figures/            gráficas
 - **Uso:** es un proyecto personal de análisis estadístico, **sin relación con Lotería Nacional ni con Pronósticos para la Asistencia Pública**. No predice números ganadores. Juega con responsabilidad.
 
 **Tecnologías:** Python, pandas, NumPy, SciPy, statsmodels, scikit-learn, PyTorch, matplotlib y Jupyter; la app está hecha en HTML, CSS y JavaScript sin frameworks.
+
+## Licencia
+[MIT](LICENSE) © 2026 Fernando Hernández Esquivel. Puedes usar, modificar y redistribuir el código siempre que conserves el aviso de copyright. La licencia cubre el código del repositorio, no los datos de las fuentes externas.
