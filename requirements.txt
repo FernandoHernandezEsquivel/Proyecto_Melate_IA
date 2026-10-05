@@ -1,0 +1,14 @@
+requests
+beautifulsoup4
+lxml
+pandas
+numpy
+matplotlib
+scipy
+statsmodels
+jupyter
+nbformat
+nbconvert
+ipykernel
+scikit-learn
+torch  # versión CPU: pip install torch --index-url https://download.pytorch.org/whl/cpu

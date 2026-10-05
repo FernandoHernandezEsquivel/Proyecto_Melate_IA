@@ -1,0 +1,857 @@
+<title>Boleto Poco Jugado</title>
+<meta name="author" content="Fernando Hernández Esquivel">
+<meta name="description" content="Estima qué tan jugada es cada combinación de Melate, sugiere combinaciones poco jugadas y simula años de juego con premios reales.">
+
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112..125,600..800&family=Public+Sans:ital,wght@0,400;0,600;0,700;1,400&family=Martian+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: boleto de papel a la izquierda (56 casillas para marcar), lectura del resultado a la derecha; debajo, generador, gráfica y explicación. */
+:root {
+  --papel: #eef1ee;      /* fondo de la página: papel gris verdoso */
+  --hoja: #fbfcfa;       /* superficie del boleto y paneles */
+  --tinta: #14202b;
+  --tinta-2: #4b5864;
+  --tinta-3: #77838c;
+  --raya: #d3d9d4;
+  --marca: #2343c9;      /* tinta de marcador para los números elegidos */
+  --marca-texto: #ffffff;
+  --menos: #2a78d6;      /* menos jugado que el promedio */
+  --mas: #c8423c;        /* más jugado que el promedio */
+  --neutro: #e9e9e4;
+  --aviso: #8a5a00;
+  --aviso-fondo: #fdf3dc;
+  --serie-a: #2343c9;    /* simulador: tu combinación */
+  --serie-b: #c95a24;    /* simulador: combinación de comparación */
+  --sombra: 0 1px 0 rgba(20, 32, 43, .06), 0 8px 24px -12px rgba(20, 32, 43, .18);
+  --f-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --f-texto: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-num: "Martian Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --papel: #101518; --hoja: #182026; --tinta: #edf1ef; --tinta-2: #aab5b1; --tinta-3: #7e8a87; --raya: #2b353b;
+    --marca: #7d95ff; --marca-texto: #0d1330; --menos: #4f9cf0; --mas: #e66767; --neutro: #283036;
+    --aviso: #f3c25a; --aviso-fondo: #33290f; --serie-a: #7d95ff; --serie-b: #e88552; --sombra: 0 1px 0 rgba(0,0,0,.3), 0 10px 28px -14px rgba(0,0,0,.7);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --papel: #101518; --hoja: #182026; --tinta: #edf1ef; --tinta-2: #aab5b1; --tinta-3: #7e8a87; --raya: #2b353b;
+  --marca: #7d95ff; --marca-texto: #0d1330; --menos: #4f9cf0; --mas: #e66767; --neutro: #283036;
+  --aviso: #f3c25a; --aviso-fondo: #33290f; --serie-a: #7d95ff; --serie-b: #e88552; --sombra: 0 1px 0 rgba(0,0,0,.3), 0 10px 28px -14px rgba(0,0,0,.7);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--papel); color: var(--tinta);
+  font: 15px/1.55 var(--f-texto);
+  padding-inline: 16px; padding-block: 28px 40px;
+}
+.envoltura { max-width: 1120px; margin: 0 auto; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 800; font-stretch: 125%; line-height: 1.02; }
+h2 { font-size: 1.35rem; font-weight: 800; font-stretch: 118%; }
+h3 { font-size: 1rem; font-weight: 700; font-stretch: 112%; }
+p { margin: 0; }
+.etiqueta { font: 600 .72rem/1.2 var(--f-texto); text-transform: uppercase; letter-spacing: .09em; color: var(--tinta-3); }
+.num { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; border-radius: 6px; }
+
+/* --- encabezado --- */
+.cabecera { display: grid; gap: 14px; max-width: 760px; }
+.cabecera .lede { font-size: 1.06rem; color: var(--tinta-2); max-width: 64ch; }
+.cabecera .lede strong { color: var(--tinta); }
+.autoria { font-size: .9rem; color: var(--tinta-2); margin-top: -4px; }
+.autoria strong { color: var(--tinta); font-weight: 700; }
+.probabilidad { display: inline-flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.probabilidad .num { font-size: .95rem; padding: 3px 8px; border: 1px dashed var(--raya); border-radius: 4px; color: var(--tinta); }
+
+/* --- zona de trabajo --- */
+.trabajo { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 860px) { .trabajo { grid-template-columns: 1fr; } }
+
+.boleto {
+  background: var(--hoja); border-radius: 10px; box-shadow: var(--sombra);
+  padding: 20px; display: grid; gap: 16px; position: relative;
+  border-top: 6px solid var(--tinta);
+}
+.boleto-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.contador { font: 600 .85rem var(--f-num); color: var(--tinta-2); }
+.rejilla { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.casilla {
+  position: relative; aspect-ratio: 1.15; border: 1px solid var(--raya); border-radius: 6px;
+  background: var(--fondo-casilla, transparent); cursor: pointer;
+  display: grid; place-items: center; font: 600 .95rem var(--f-num); color: var(--tinta);
+  transition: background-color .15s, border-color .15s, transform .1s;
+}
+.casilla:hover { border-color: var(--tinta-3); }
+.casilla:active { transform: scale(.96); }
+.casilla[aria-pressed="true"] { color: var(--marca-texto); border-color: var(--marca); }
+.casilla[aria-pressed="true"]::before {
+  content: ""; position: absolute; inset: 3px; border-radius: 48% 52% 46% 54% / 55% 45% 55% 45%;
+  background: var(--marca); transform: rotate(-4deg); z-index: 0;
+}
+.casilla span { position: relative; z-index: 1; }
+.casilla .w { position: absolute; bottom: 2px; right: 4px; font: 400 .58rem var(--f-num); color: var(--tinta-3); z-index: 1; }
+.casilla[aria-pressed="true"] .w { color: var(--marca-texto); opacity: .8; }
+.rejilla:not(.con-calor) .w { display: none; }
+
+.interruptor { display: inline-flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--tinta-2); cursor: pointer; user-select: none; }
+.interruptor input { appearance: none; width: 34px; height: 20px; border-radius: 99px; background: var(--raya); position: relative; cursor: pointer; transition: background .15s; margin: 0; }
+.interruptor input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--hoja); transition: transform .15s; }
+.interruptor input:checked { background: var(--marca); }
+.interruptor input:checked::after { transform: translateX(14px); }
+
+.leyenda-calor { display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--tinta-2); flex-wrap: wrap; }
+.leyenda-calor .barra { flex: 1 1 140px; height: 8px; border-radius: 99px; background: linear-gradient(90deg, var(--menos), var(--neutro), var(--mas)); }
+
+.acciones { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.btn {
+  border: 1px solid var(--raya); background: var(--hoja); border-radius: 8px; padding: 9px 14px;
+  font-weight: 600; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.btn:hover { border-color: var(--tinta-3); }
+.btn.principal { background: var(--tinta); color: var(--hoja); border-color: var(--tinta); }
+.btn.principal:hover { background: var(--marca); border-color: var(--marca); color: var(--marca-texto); }
+.btn.chico { padding: 5px 10px; font-size: .82rem; }
+.exigencia { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--tinta-2); }
+.exigencia select { border: 1px solid var(--raya); border-radius: 8px; padding: 8px 10px; background: var(--hoja); }
+
+/* --- lectura --- */
+.lectura { display: grid; gap: 18px; padding: 4px 4px 0; }
+.combinacion { display: flex; gap: 8px; flex-wrap: wrap; }
+.bola {
+  width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+  font: 600 1.02rem var(--f-num); background: var(--hoja); border: 2px solid var(--tono, var(--raya));
+  box-shadow: var(--sombra);
+}
+.bola.vacia { border-style: dashed; color: var(--tinta-3); box-shadow: none; background: transparent; }
+.cifra { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.cifra .grande { font: 800 3.4rem/1 var(--f-display); font-stretch: 112%; letter-spacing: -0.02em; }
+.veredicto { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 99px; font-weight: 700; font-size: .88rem;
+  background: color-mix(in oklab, var(--tono) 16%, var(--hoja)); color: var(--tinta); border: 1px solid color-mix(in oklab, var(--tono) 45%, var(--hoja)); }
+.veredicto::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--tono); }
+.explica { color: var(--tinta-2); font-size: .92rem; }
+
+.medidor { display: grid; gap: 6px; }
+.medidor .pista { position: relative; height: 12px; border-radius: 99px; background: linear-gradient(90deg, var(--menos), var(--neutro) 55%, var(--mas)); }
+.medidor .aguja { position: absolute; top: -6px; width: 4px; height: 24px; border-radius: 2px; background: var(--tinta); transform: translateX(-50%); transition: left .35s cubic-bezier(.3,.7,.2,1); box-shadow: 0 0 0 2px var(--hoja); }
+.medidor .extremos { display: flex; justify-content: space-between; font-size: .76rem; color: var(--tinta-3); }
+
+.premios { display: grid; gap: 0; border-top: 1px solid var(--raya); }
+.premio { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--raya); align-items: baseline; }
+.premio .valor { font: 700 1rem var(--f-num); font-variant-numeric: tabular-nums; }
+.premio .valor.bien { color: var(--menos); }
+.premio .valor.mal { color: var(--mas); }
+.premio small { grid-column: 1 / -1; color: var(--tinta-3); font-size: .8rem; }
+
+.avisos { display: grid; gap: 8px; }
+.aviso { background: var(--aviso-fondo); color: var(--tinta); border-radius: 8px; padding: 9px 12px; font-size: .88rem; display: flex; gap: 9px; }
+.aviso b { color: var(--aviso); }
+
+.copiar-fila { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.estado { font-size: .82rem; color: var(--tinta-3); }
+
+/* --- generador en lista --- */
+.seccion { display: grid; gap: 14px; }
+.seccion-cabeza { display: flex; justify-content: space-between; align-items: end; gap: 12px; flex-wrap: wrap; }
+.seccion-cabeza p { color: var(--tinta-2); max-width: 62ch; }
+.lista { background: var(--hoja); border-radius: 10px; box-shadow: var(--sombra); overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th { text-align: left; font: 600 .72rem var(--f-texto); text-transform: uppercase; letter-spacing: .08em; color: var(--tinta-3); padding: 12px 14px; border-bottom: 1px solid var(--raya); white-space: nowrap; }
+td { padding: 10px 14px; border-bottom: 1px solid var(--raya); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.combi { font: 600 1rem var(--f-num); letter-spacing: .02em; }
+td.der, th.der { text-align: right; font-variant-numeric: tabular-nums; }
+.mini-barra { display: inline-block; width: 70px; height: 6px; border-radius: 99px; background: var(--neutro); vertical-align: middle; margin-right: 8px; overflow: hidden; }
+.mini-barra i { display: block; height: 100%; background: var(--menos); border-radius: 99px; }
+
+/* --- simulador --- */
+.sim { background: var(--hoja); border-radius: 10px; box-shadow: var(--sombra); padding: 20px; display: grid; gap: 22px; }
+.sim-controles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px 20px; align-items: end; }
+.campo { display: grid; gap: 6px; min-width: 0; }
+.campo > span { font: 600 .72rem var(--f-texto); text-transform: uppercase; letter-spacing: .08em; color: var(--tinta-3); }
+.campo select, .campo input[type="number"] { border: 1px solid var(--raya); border-radius: 8px; padding: 8px 10px; background: var(--hoja); width: 100%; }
+.campo .fila { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.campo .combi-sim { font: 600 1rem var(--f-num); letter-spacing: .02em; }
+.casilla-chk { display: inline-flex; align-items: center; gap: 6px; font-size: .9rem; }
+.precio { width: 72px !important; }
+.duelo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 640px) { .duelo { grid-template-columns: 1fr; } }
+.lado { border: 1px solid var(--raya); border-radius: 10px; padding: 16px; display: grid; gap: 12px; border-top: 4px solid var(--serie); }
+.lado-cabeza { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.lado-cabeza .combi-sim { font: 600 1.02rem var(--f-num); }
+.cifras { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+.cifras div { display: grid; gap: 2px; }
+.cifras .v { font: 700 1.2rem var(--f-display); font-stretch: 112%; font-variant-numeric: tabular-nums; }
+.cifras .v.neg { color: var(--mas); }
+.cifras .v.pos { color: var(--menos); }
+.notas-sim { font-size: .82rem; color: var(--tinta-3); }
+.tabla-sim { overflow-x: auto; border: 1px solid var(--raya); border-radius: 10px; }
+.tabla-sim td.cero { color: var(--tinta-3); }
+.tabla-sim tr.grupo td { font: 600 .72rem var(--f-texto); text-transform: uppercase; letter-spacing: .08em; color: var(--tinta-3); background: color-mix(in oklab, var(--neutro) 50%, var(--hoja)); }
+.saldo { position: relative; }
+.saldo svg { width: 100%; height: auto; display: block; overflow: visible; }
+.saldo .tip { position: absolute; pointer-events: none; background: var(--tinta); color: var(--hoja); font-size: .8rem; padding: 6px 9px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -105%); line-height: 1.4; }
+.vidas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.vida { display: grid; gap: 6px; }
+.vida .rango { position: relative; height: 10px; border-radius: 99px; background: var(--neutro); }
+.vida .rango i { position: absolute; top: 0; height: 100%; border-radius: 99px; background: color-mix(in oklab, var(--serie) 45%, var(--hoja)); }
+.vida .rango b { position: absolute; top: -3px; width: 4px; height: 16px; border-radius: 2px; background: var(--serie); transform: translateX(-50%); }
+.momentos { display: grid; gap: 6px; font-size: .88rem; }
+.momento { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.momento .punto { width: 9px; height: 9px; border-radius: 50%; background: var(--serie); display: inline-block; }
+
+/* --- gráfica --- */
+.grafica { background: var(--hoja); border-radius: 10px; box-shadow: var(--sombra); padding: 18px 16px 10px; position: relative; }
+.grafica svg { width: 100%; height: auto; display: block; overflow: visible; }
+.grafica .tip { position: absolute; pointer-events: none; background: var(--tinta); color: var(--hoja); font-size: .8rem; padding: 5px 9px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -110%); }
+.leyenda { display: flex; gap: 18px; flex-wrap: wrap; font-size: .82rem; color: var(--tinta-2); padding: 0 4px 6px; }
+.leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+.leyenda i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+details { font-size: .88rem; color: var(--tinta-2); }
+details summary { cursor: pointer; padding: 6px 4px; }
+.tabla-pesos { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 4px 12px; padding: 8px 4px; font-family: var(--f-num); font-size: .8rem; }
+
+/* --- cómo funciona --- */
+.bloques { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 28px; }
+.bloque { display: grid; gap: 8px; align-content: start; }
+.bloque p { color: var(--tinta-2); font-size: .93rem; }
+.bloque .dato { font: 700 1.5rem var(--f-display); font-stretch: 112%; color: var(--tinta); }
+.no-hace { border-left: 3px solid var(--mas); padding: 4px 0 4px 16px; display: grid; gap: 8px; max-width: 75ch; }
+.no-hace p { color: var(--tinta-2); font-size: .93rem; }
+footer { border-top: 1px solid var(--raya); padding-top: 16px; font-size: .8rem; color: var(--tinta-3); display: grid; gap: 4px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (max-width: 480px) {
+  .boleto { padding: 14px; }
+  .rejilla { gap: 4px; }
+  .casilla { font-size: .82rem; }
+  .bola { width: 40px; height: 40px; font-size: .92rem; }
+  .cifra .grande { font-size: 2.8rem; }
+}
+</style>
+
+<div class="envoltura">
+  <header class="cabecera">
+    <span class="etiqueta">Melate · 6 de 56 números</span>
+    <h1>Boleto Poco Jugado</h1>
+    <p class="autoria">Creado por <strong>Fernando Hernández Esquivel</strong>, en colaboración con Claude (Anthropic)</p>
+    <p class="lede">Todas las combinaciones tienen la misma probabilidad de salir. Lo que cambia es <strong>cuánta gente juega la misma que tú</strong>. Si ganas con una combinación que casi nadie juega, compartes menos el premio. Esta herramienta estima qué tan jugada es cada combinación con base en los ganadores reales de cada sorteo.</p>
+    <div class="probabilidad"><span class="etiqueta">Probabilidad del premio mayor, para cualquier combinación</span><span class="num">1 en 32,468,436</span></div>
+  </header>
+
+  <section class="trabajo" aria-label="Elige o genera tu combinación">
+    <div class="boleto">
+      <div class="boleto-cabeza">
+        <h2>Tu boleto</h2>
+        <span class="contador" id="contador">0 / 6</span>
+      </div>
+      <div class="rejilla" id="rejilla" role="group" aria-label="Números del 1 al 56"></div>
+      <label class="interruptor" for="ver-calor"><input type="checkbox" id="ver-calor"> Colorear según qué tan jugado es cada número</label>
+      <div class="leyenda-calor" id="leyenda-calor" hidden><span>menos jugado</span><span class="barra"></span><span>más jugado</span></div>
+      <div class="acciones">
+        <button class="btn principal" id="generar" type="button">Generar combinación poco jugada</button>
+        <button class="btn" id="borrar" type="button">Borrar</button>
+        <label class="exigencia" for="exigencia">entre el
+          <select id="exigencia">
+            <option value="5">5% menos jugado</option>
+            <option value="10" selected>10% menos jugado</option>
+            <option value="25">25% menos jugado</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="lectura" aria-live="polite">
+      <div class="combinacion" id="bolas"></div>
+      <div id="resultado"></div>
+    </div>
+  </section>
+
+  <section class="seccion" aria-labelledby="t-varias">
+    <div class="seccion-cabeza">
+      <div style="display:grid;gap:6px">
+        <h2 id="t-varias">Varias combinaciones para elegir</h2>
+        <p>Cada una se elige al azar dentro del grupo menos jugado, así que no todas las personas que usen la herramienta reciben la misma.</p>
+      </div>
+      <button class="btn" id="generar-lista" type="button">Generar otras 5</button>
+    </div>
+    <div class="lista">
+      <table>
+        <thead><tr><th>Combinación</th><th class="der">Popularidad</th><th>Más jugada que</th><th></th></tr></thead>
+        <tbody id="lista"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="seccion" aria-labelledby="t-sim">
+    <div class="seccion-cabeza">
+      <div style="display:grid;gap:6px">
+        <h2 id="t-sim">Simulador: ¿qué pasa si juego durante años?</h2>
+        <p>Juega dos combinaciones en los mismos sorteos simulados, generados al azar como los reales, y compara cuánto gastarías y cuánto ganarías. Los premios son los promedios reales pagados desde <span id="premios-desde">2024</span>.</p>
+      </div>
+    </div>
+    <div class="sim">
+      <form class="sim-controles" id="form-sim">
+        <div class="campo">
+          <span>Tu combinación</span>
+          <div class="fila"><span class="combi-sim" id="sim-a">—</span><button class="btn chico" type="button" id="sim-tomar">Tomar la del boleto</button></div>
+        </div>
+        <div class="campo">
+          <label for="sim-b"><span class="etiqueta">Comparar contra</span></label>
+          <select id="sim-b">
+            <option value="fechas">Fechas de cumpleaños (3-7-12-15-21-28)</option>
+            <option value="azar">Una combinación al azar</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="sim-anios"><span class="etiqueta">Tiempo jugando</span></label>
+          <select id="sim-anios">
+            <option value="1">1 año</option>
+            <option value="5">5 años</option>
+            <option value="10" selected>10 años</option>
+            <option value="20">20 años</option>
+            <option value="40">40 años</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="sim-semana"><span class="etiqueta">Sorteos por semana</span></label>
+          <select id="sim-semana">
+            <option value="1">1 (solo domingo)</option>
+            <option value="2">2</option>
+            <option value="3" selected>3 (todos)</option>
+          </select>
+        </div>
+        <div class="campo">
+          <span>Juegos y precio por boleto</span>
+          <div class="fila">
+            <label class="casilla-chk" for="p-melate">Melate $</label><input class="precio" type="number" id="p-melate" min="0" step="1" value="15">
+          </div>
+          <div class="fila">
+            <label class="casilla-chk" for="j-revancha"><input type="checkbox" id="j-revancha"> Revancha +$</label><input class="precio" type="number" id="p-revancha" min="0" step="1" value="10" aria-label="Precio de Revancha">
+          </div>
+          <div class="fila">
+            <label class="casilla-chk" for="j-revanchita"><input type="checkbox" id="j-revanchita"> Revanchita +$</label><input class="precio" type="number" id="p-revanchita" min="0" step="1" value="5" aria-label="Precio de Revanchita">
+          </div>
+        </div>
+        <div class="campo">
+          <label for="sim-bolsa"><span class="etiqueta">Premio mayor si lo ganas (millones)</span></label>
+          <input type="number" id="sim-bolsa" min="1" step="1" value="60">
+          <button class="btn principal" type="submit" id="sim-correr">Simular</button>
+        </div>
+      </form>
+      <div id="sim-resultado"></div>
+    </div>
+  </section>
+
+  <section class="seccion" aria-labelledby="t-numeros">
+    <div class="seccion-cabeza">
+      <div style="display:grid;gap:6px">
+        <h2 id="t-numeros">Qué números juega la gente</h2>
+        <p>Peso de cada número entre quienes eligen sus propios números (1× = promedio). Las fechas de cumpleaños empujan hacia arriba del 1 al 31. Del 39 en adelante casi nadie elige.</p>
+      </div>
+    </div>
+    <div class="grafica" id="grafica">
+      <div class="leyenda"><span><i style="background:var(--mas)"></i>más elegido que el promedio</span><span><i style="background:var(--menos)"></i>menos elegido que el promedio</span></div>
+      <svg id="svg-pesos" viewBox="0 0 900 300" role="img" aria-label="Peso relativo de cada número del 1 al 56"></svg>
+      <div class="tip" id="tip" hidden></div>
+      <details><summary>Ver los 56 valores</summary><div class="tabla-pesos" id="tabla-pesos"></div></details>
+    </div>
+  </section>
+
+  <section class="seccion" aria-labelledby="t-como">
+    <h2 id="t-como">Cómo funciona</h2>
+    <div class="bloques" id="bloques"></div>
+    <div class="no-hace">
+      <h3>Lo que esta herramienta no hace</h3>
+      <p><b>No predice qué números van a salir.</b> Se analizaron los 4,273 sorteos desde 1984 y los resultados son indistinguibles del azar. Ninguna estrategia basada en el historial (números calientes, fríos o atrasados) acierta más que elegir al azar.</p>
+      <p><b>No convierte el boleto en una buena inversión.</b> En promedio, cada boleto devuelve menos de lo que cuesta. Elegir una combinación poco jugada solo reduce cuánto se pierde.</p>
+      <p><b>Solo aprende de números y de dos patrones</b> (consecutivos y misma decena). Otros patrones muy jugados, como combinaciones ganadoras anteriores, secuencias o progresiones, se excluyen al generar por prudencia, aunque el modelo no los mida.</p>
+    </div>
+  </section>
+
+  <footer id="pie"></footer>
+</div>
+
+<script>
+const DATOS = /*__DATOS__*/null;
+
+const N = 56, K = 6;
+const $ = (s) => document.querySelector(s);
+const fmt = (x, d = 2) => x.toLocaleString("es-MX", { minimumFractionDigits: d, maximumFractionDigits: d });
+const dd = (n) => String(n).padStart(2, "0");
+const almacen = {
+  leer(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  guardar(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* sin almacenamiento */ } },
+};
+
+// ---------- modelo (misma fórmula que src/popularidad.py) ----------
+const PREVIAS = new Set(DATOS.previas);
+const PEN = [0, 0, 1, 3, 6, 10, 14]; // Σ min(t, 4) para t = 0..n-1
+function popularidad(c) {
+  const s = [...c].sort((a, b) => a - b);
+  let consec = 0;
+  for (let i = 1; i < s.length; i++) if (s[i] - s[i - 1] === 1) consec++;
+  const dec = {};
+  s.forEach((n) => { const d = Math.floor(n / 10); dec[d] = (dec[d] || 0) + 1; });
+  const pen = Object.values(dec).reduce((a, n) => a + PEN[n], 0);
+  const lw = s.reduce((a, n) => a + DATOS.theta[n - 1], 0) + DATOS.logGamma * consec + DATOS.logDelta * pen + DATOS.logK;
+  return DATOS.q + (1 - DATOS.q) * Math.exp(lw);
+}
+function percentil(p) { // % de combinaciones menos jugadas que p
+  const q = DATOS.cuantiles, n = q.length - 1;
+  if (p <= q[0]) return 0;
+  if (p >= q[n]) return 100;
+  let lo = 0, hi = n;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (q[m] <= p) lo = m; else hi = m; }
+  return ((lo + (p - q[lo]) / (q[hi] - q[lo])) / n) * 100;
+}
+const umbral = (pct) => DATOS.cuantiles[Math.round((pct / 100) * (DATOS.cuantiles.length - 1))];
+function beneficio(p) { // premio relativo (4 y 5 aciertos) interpolado en log-popularidad
+  const pts = DATOS.beneficio.puntos, x = Math.log(p);
+  if (x <= Math.log(pts[0][0])) return [pts[0][1], pts[0][2]];
+  for (let i = 1; i < pts.length; i++) {
+    const x0 = Math.log(pts[i - 1][0]), x1 = Math.log(pts[i][0]);
+    if (x <= x1) { const t = (x - x0) / (x1 - x0); return [1, 2].map((j) => pts[i - 1][j] + t * (pts[i][j] - pts[i - 1][j])); }
+  }
+  const u = pts[pts.length - 1]; return [u[1], u[2]];
+}
+function patrones(c) {
+  const s = [...c].sort((a, b) => a - b), avisos = [];
+  if (PREVIAS.has(s.join("-"))) avisos.push(["Ya salió como combinación ganadora.", "Mucha gente juega combinaciones ganadoras anteriores."]);
+  let racha = 1, max = 1;
+  for (let i = 1; i < 6; i++) { racha = s[i] - s[i - 1] === 1 ? racha + 1 : 1; max = Math.max(max, racha); }
+  if (max >= 3) avisos.push([`${max} números seguidos.`, "Las secuencias largas suelen ser muy jugadas, aunque el modelo no lo mide."]);
+  const dif = s.slice(1).map((n, i) => n - s[i]);
+  if (dif.every((d) => d === dif[0])) avisos.push(["Progresión aritmética.", "Los patrones regulares suelen ser muy jugados."]);
+  return avisos;
+}
+const esPatron = (c) => patrones(c).length > 0;
+function alAzar() {
+  const a = Array.from({ length: N }, (_, i) => i + 1);
+  for (let i = 0; i < K; i++) { const j = i + Math.floor(Math.random() * (N - i)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a.slice(0, K).sort((x, y) => x - y);
+}
+function generar(pct) {
+  const u = umbral(pct);
+  for (let t = 0; t < 300000; t++) { const c = alAzar(); if (popularidad(c) <= u && !esPatron(c)) return c; }
+  return null;
+}
+function veredicto(pct) {
+  if (pct < 10) return ["Muy poco jugada", "var(--menos)"];
+  if (pct < 35) return ["Poco jugada", "var(--menos)"];
+  if (pct < 65) return ["Jugada como el promedio", "var(--tinta-3)"];
+  if (pct < 90) return ["Bastante jugada", "var(--mas)"];
+  if (pct < 99) return ["Muy jugada", "var(--mas)"];
+  return ["Extremadamente jugada", "var(--mas)"];
+}
+const tonoPeso = (w) => { // azul (menos) ↔ neutro ↔ rojo (más), en escala log
+  const t = Math.max(-1, Math.min(1, Math.log(w) / Math.log(2.4)));
+  const pct = Math.round(Math.abs(t) * 70);
+  return `color-mix(in oklab, ${t < 0 ? "var(--menos)" : "var(--mas)"} ${pct}%, var(--neutro))`;
+};
+
+// ---------- boleto ----------
+let elegidos = [];
+const rejilla = $("#rejilla");
+for (let n = 1; n <= N; n++) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "casilla"; b.id = `n${n}`; b.dataset.n = n;
+  b.setAttribute("aria-pressed", "false");
+  b.setAttribute("aria-label", `Número ${n}, peso ${fmt(DATOS.pesos[n - 1])} veces el promedio`);
+  b.innerHTML = `<span>${dd(n)}</span><span class="w">${fmt(DATOS.pesos[n - 1], 1)}</span>`;
+  b.addEventListener("click", () => alternar(n));
+  rejilla.appendChild(b);
+}
+function alternar(n) {
+  if (elegidos.includes(n)) elegidos = elegidos.filter((x) => x !== n);
+  else if (elegidos.length < K) elegidos = [...elegidos, n].sort((a, b) => a - b);
+  else { $("#contador").textContent = "Ya tienes 6: quita uno primero"; return; }
+  pintar();
+}
+function poner(c) { elegidos = [...c]; pintar(); }
+function aplicarCalor(on) {
+  rejilla.classList.toggle("con-calor", on);
+  $("#leyenda-calor").hidden = !on;
+  rejilla.querySelectorAll(".casilla").forEach((b) => b.style.setProperty("--fondo-casilla", on ? tonoPeso(DATOS.pesos[b.dataset.n - 1]) : "transparent"));
+}
+
+function pintar() {
+  rejilla.querySelectorAll(".casilla").forEach((b) => b.setAttribute("aria-pressed", elegidos.includes(+b.dataset.n)));
+  $("#contador").textContent = `${elegidos.length} / 6`;
+  $("#bolas").innerHTML = Array.from({ length: K }, (_, i) => {
+    const n = elegidos[i];
+    return n ? `<span class="bola" style="--tono:${tonoPeso(DATOS.pesos[n - 1])}">${dd(n)}</span>` : `<span class="bola vacia">··</span>`;
+  }).join("");
+  const r = $("#resultado");
+  if (elegidos.length < K) {
+    r.innerHTML = `<p class="explica">Marca ${K - elegidos.length} número${K - elegidos.length === 1 ? "" : "s"} más en el boleto, o pulsa <b>Generar combinación poco jugada</b>.</p>`;
+    return;
+  }
+  const p = popularidad(elegidos), pct = percentil(p), [b4, b5] = beneficio(p);
+  const avisos = patrones(elegidos);
+  // El modelo no mide patrones especiales (secuencias, progresiones, ganadoras anteriores): no los califica como poco jugados.
+  const [txt, tono] = avisos.length ? ["Patrón que mucha gente juega", "var(--mas)"] : veredicto(pct);
+  const rel = (x) => { const d = Math.round((x - 1) * 100); return d === 0 ? "igual" : `${d > 0 ? "+" : "−"}${Math.abs(d)}%`; };
+  const clase = (x) => (x > 1.02 ? "bien" : x < 0.98 ? "mal" : "");
+  const v4 = avisos.length ? ["probablemente menos", "mal"] : [rel(b4), clase(b4)];
+  const v5 = avisos.length ? ["probablemente menos", "mal"] : [rel(b5), clase(b5)];
+  const explica = avisos.length
+    ? `El modelo estima ${fmt(p)}×, pero no sabe medir este tipo de patrón. En la práctica, combinaciones así suelen ser de las más jugadas.`
+    : `Se juega ${fmt(p)} veces lo que una combinación promedio. Es más jugada que el <b class="num">${fmt(pct, 0)}%</b> de todas las combinaciones posibles.`;
+  r.innerHTML = `
+    <div style="display:grid;gap:18px">
+      <div style="display:grid;gap:8px">
+        <span class="etiqueta">Popularidad estimada</span>
+        <div class="cifra"><span class="grande">${avisos.length ? "?" : fmt(p) + "×"}</span><span class="veredicto" style="--tono:${tono}">${txt}</span></div>
+        <p class="explica">${explica}</p>
+      </div>
+      ${avisos.length ? `<div class="avisos">${avisos.map(([a, b]) => `<div class="aviso"><span><b>${a}</b> ${b}</span></div>`).join("")}</div>` : `
+      <div class="medidor" aria-hidden="true">
+        <div class="pista"><span class="aguja" style="left:${Math.max(1, Math.min(99, pct))}%"></span></div>
+        <div class="extremos"><span>la menos jugada</span><span>la más jugada</span></div>
+      </div>`}
+      <div class="premios">
+        <div class="premio"><span>Si aciertas 4 números</span><span class="valor ${v4[1]}">${v4[0]}</span><small>Premio esperado frente a una combinación al azar. Se reparte entre todos los que aciertan 4.</small></div>
+        <div class="premio"><span>Si aciertas 5 números</span><span class="valor ${v5[1]}">${v5[0]}</span><small>Lo mismo para el 2º y 3er lugar.</small></div>
+        <div class="premio"><span>Premio mayor (6 aciertos)</span><span class="valor">casi igual</span><small>Se juegan ~${Math.round(DATOS.meta.ventas_mediana / 1e5) / 10} millones de combinaciones por sorteo entre 32.5 millones posibles: el premio mayor casi nunca se comparte.</small></div>
+        <div class="premio"><span>2 o 3 aciertos</span><span class="valor">igual</span><small>Son premios fijos: no dependen de cuántos ganen.</small></div>
+      </div>
+      <div class="copiar-fila">
+        <button class="btn chico" id="copiar" type="button">Copiar combinación</button>
+        <span class="estado num" id="estado-copia">${elegidos.map(dd).join(" - ")}</span>
+      </div>
+    </div>`;
+  $("#copiar").addEventListener("click", () => copiar(elegidos.map(dd).join(" - "), $("#estado-copia")));
+}
+function copiar(texto, nodo) {
+  const ok = () => { nodo.textContent = `Copiado: ${texto}`; };
+  const fallo = () => { const rango = document.createRange(); rango.selectNodeContents(nodo); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rango); nodo.textContent = texto; };
+  try { navigator.clipboard.writeText(texto).then(ok, fallo); } catch (e) { fallo(); }
+}
+
+// ---------- lista ----------
+function llenarLista() {
+  const pct = +$("#exigencia").value;
+  const filas = Array.from({ length: 5 }, () => generar(pct)).filter(Boolean);
+  $("#lista").innerHTML = filas.map((c, i) => {
+    const p = popularidad(c), q = percentil(p);
+    return `<tr>
+      <td class="combi">${c.map(dd).join(" ")}</td>
+      <td class="der num">${fmt(p)}×</td>
+      <td><span class="mini-barra"><i style="width:${Math.max(3, q)}%"></i></span><span class="num">${fmt(q, 0)}%</span></td>
+      <td class="der"><button class="btn chico" type="button" data-usar="${i}">Usar</button></td>
+    </tr>`;
+  }).join("");
+  $("#lista").querySelectorAll("[data-usar]").forEach((b) => b.addEventListener("click", () => {
+    poner(filas[+b.dataset.usar]);
+    document.querySelector(".trabajo").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  }));
+}
+
+// ---------- gráfica de pesos ----------
+function grafica() {
+  const svg = $("#svg-pesos"), W = 900, H = 300, m = { l: 44, r: 10, t: 16, b: 34 };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const ymax = Math.log(3), ymin = Math.log(1 / 3);
+  const y = (w) => m.t + ((ymax - Math.log(w)) / (ymax - ymin)) * ph;
+  const x = (n) => m.l + ((n - 0.5) / N) * pw;
+  const bw = (pw / N) * 0.62;
+  let s = "";
+  [1 / 3, 1 / 2, 1, 2, 3].forEach((t) => {
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--raya)" stroke-width="${t === 1 ? 1.4 : 0.8}"/>`;
+    s += `<text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="var(--tinta-3)" font-family="var(--f-num)">${t < 1 ? "1/" + Math.round(1 / t) : t}×</text>`;
+  });
+  s += `<line x1="${x(31.5) + (pw / N) / 2}" x2="${x(31.5) + (pw / N) / 2}" y1="${m.t}" y2="${m.t + ph}" stroke="var(--tinta-3)" stroke-dasharray="0" stroke-width="1"/>`;
+  s += `<text x="${x(31.5) + (pw / N) / 2 - 6}" y="${m.t + 10}" text-anchor="end" font-size="11" fill="var(--tinta-2)">← días del mes (1–31)</text>`;
+  const orden = DATOS.pesos.map((w, i) => [w, i + 1]).sort((a, b) => b[0] - a[0]);
+  const etiquetar = new Set([...orden.slice(0, 3), ...orden.slice(-3)].map((o) => o[1]));
+  DATOS.pesos.forEach((w, i) => {
+    const n = i + 1, y0 = y(1), y1 = y(w), top = Math.min(y0, y1), h = Math.max(1.5, Math.abs(y1 - y0));
+    s += `<rect x="${x(n) - bw / 2}" y="${top}" width="${bw}" height="${h}" rx="2" fill="${w >= 1 ? "var(--mas)" : "var(--menos)"}"/>`;
+    s += `<rect class="hit" data-n="${n}" x="${x(n) - pw / N / 2}" y="${m.t}" width="${pw / N}" height="${ph}" fill="transparent"/>`;
+    if (etiquetar.has(n)) s += `<text x="${x(n)}" y="${w >= 1 ? y1 - 6 : y1 + 14}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--tinta)" font-family="var(--f-num)">${n}</text>`;
+    if (n === 1 || n % 5 === 0) s += `<text x="${x(n)}" y="${H - m.b + 18}" text-anchor="middle" font-size="11" fill="var(--tinta-3)" font-family="var(--f-num)">${n}</text>`;
+  });
+  svg.innerHTML = s;
+  const tip = $("#tip"), caja = $("#grafica");
+  svg.querySelectorAll(".hit").forEach((r) => {
+    const mostrar = () => {
+      const n = +r.dataset.n, w = DATOS.pesos[n - 1];
+      const bs = svg.getBoundingClientRect(), bc = caja.getBoundingClientRect();
+      tip.textContent = `${n}: ${fmt(w)}× el promedio`;
+      tip.style.left = `${bs.left - bc.left + (x(n) / W) * bs.width}px`;
+      tip.style.top = `${bs.top - bc.top + (y(Math.max(w, 1)) / H) * bs.height}px`;
+      tip.hidden = false;
+    };
+    r.addEventListener("mouseenter", mostrar);
+    r.addEventListener("click", mostrar);
+    r.addEventListener("mouseleave", () => { tip.hidden = true; });
+  });
+  $("#tabla-pesos").innerHTML = DATOS.pesos.map((w, i) => `<span>${dd(i + 1)} · ${fmt(w)}×</span>`).join("");
+}
+
+// ---------- simulador ----------
+const C56 = 32468436;
+const combi = (n, k) => { let r = 1; for (let i = 1; i <= k; i++) r = (r * (n - k + i)) / i; return r; };
+const PNAT = Array.from({ length: 7 }, (_, j) => (combi(6, j) * combi(50, 6 - j)) / C56);
+const PR = DATOS.premios;
+const FECHAS = [3, 7, 12, 15, 21, 28];
+const pesos$ = (x) => `${x < 0 ? "−" : ""}$${Math.round(Math.abs(x)).toLocaleString("es-MX")}`;
+const unoEn = (p) => `1 en ${Math.round(1 / p).toLocaleString("es-MX")}`;
+let simA = null;
+
+function categorias(j) { // [clave, juego, etiqueta, probabilidad, tipo de premio]
+  const cats = [];
+  if (j.melate) {
+    cats.push(["M1", "Melate", "6 aciertos (premio mayor)", PNAT[6], "mayor"]);
+    for (const k of [5, 4, 3, 2]) {
+      const pa = (6 - k) / 50, tipo = k === 5 ? "rep5" : k === 4 ? "rep4" : "fijo";
+      cats.push([`M${2 * (6 - k)}`, "Melate", `${k} + adicional`, PNAT[k] * pa, tipo]);
+      cats.push([`M${2 * (6 - k) + 1}`, "Melate", `${k} aciertos`, PNAT[k] * (1 - pa), tipo]);
+    }
+  }
+  if (j.revancha) {
+    cats.push(["R1", "Revancha", "6 aciertos (premio mayor)", PNAT[6], "mayor"]);
+    [5, 4, 3, 2].forEach((k) => cats.push([`R${7 - k}`, "Revancha", `${k} aciertos`, PNAT[k], k === 5 ? "rep5" : k === 4 ? "rep4" : "fijo"]));
+  }
+  if (j.revanchita) cats.push(["V1", "Revanchita", "6 aciertos (premio mayor)", PNAT[6], "mayor"]);
+  return cats;
+}
+function premioDe(cat, f, bolsa) {
+  const [clave, , , , tipo] = cat;
+  if (tipo === "mayor") return bolsa;
+  if (tipo === "rep4") return PR[clave] * f[0];
+  if (tipo === "rep5") return PR[clave] * f[1];
+  return PR[clave];
+}
+function gauss() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+function binom(n, p) {
+  const m = n * p;
+  if (m < 30) { const L = Math.exp(-m); let k = 0, q = Math.random(); while (q > L) { k++; q *= Math.random(); } return k; }
+  return Math.max(0, Math.round(m + Math.sqrt(m * (1 - p)) * gauss()));
+}
+
+function leerConfig() {
+  const num = (id, d) => { const v = parseFloat($(id).value); return Number.isFinite(v) && v >= 0 ? v : d; };
+  const juegos = { melate: true, revancha: $("#j-revancha").checked, revanchita: $("#j-revanchita").checked };
+  const costo = num("#p-melate", 15) + (juegos.revancha ? num("#p-revancha", 10) : 0) + (juegos.revanchita ? num("#p-revanchita", 5) : 0);
+  return { anios: +$("#sim-anios").value, semana: +$("#sim-semana").value, juegos, costo, bolsa: num("#sim-bolsa", 60) * 1e6 };
+}
+
+function simular(A, B, cfg) {
+  const n = Math.round(cfg.anios * 52 * cfg.semana);
+  const cats = categorias(cfg.juegos);
+  const idx = Object.fromEntries(cats.map((c, i) => [c[0], i]));
+  const bolas = Array.from({ length: N }, (_, i) => i + 1);
+  const extraer = (k) => { for (let i = 0; i < k; i++) { const j = i + Math.floor(Math.random() * (N - i)); [bolas[i], bolas[j]] = [bolas[j], bolas[i]]; } return bolas.slice(0, k); };
+  const lados = [A, B].map((c) => {
+    const marca = new Uint8Array(N + 1); c.forEach((x) => { marca[x] = 1; });
+    const p = popularidad(c), f = beneficio(p);
+    return { c, marca, p, f, premio: cats.map((cat) => premioDe(cat, f, cfg.bolsa)), cuenta: cats.map(() => 0), ganado: 0, saldo: [], momentos: [] };
+  });
+  const paso = Math.max(1, Math.floor(n / 360));
+  const anota = (l, clave, t) => {
+    if (clave == null || !(clave in idx)) return;
+    const i = idx[clave]; l.cuenta[i]++; l.ganado += l.premio[i];
+    if (cats[i][4] !== "fijo") l.momentos.push({ t, juego: cats[i][1], etiqueta: cats[i][2], monto: l.premio[i] });
+  };
+  for (let t = 0; t < n; t++) {
+    if (cfg.juegos.melate) {
+      const s = extraer(7);
+      for (const l of lados) {
+        let h = 0; for (let i = 0; i < 6; i++) h += l.marca[s[i]];
+        const a = l.marca[s[6]] === 1;
+        anota(l, h === 6 ? "M1" : h >= 2 ? `M${2 * (6 - h) + (a ? 0 : 1)}` : null, t);
+      }
+    }
+    if (cfg.juegos.revancha) {
+      const s = extraer(6);
+      for (const l of lados) { let h = 0; for (const x of s) h += l.marca[x]; anota(l, h >= 2 ? `R${7 - h}` : null, t); }
+    }
+    if (cfg.juegos.revanchita) {
+      const s = extraer(6);
+      for (const l of lados) { let h = 0; for (const x of s) h += l.marca[x]; anota(l, h === 6 ? "V1" : null, t); }
+    }
+    if (t % paso === 0 || t === n - 1) for (const l of lados) l.saldo.push([t + 1, l.ganado - cfg.costo * (t + 1)]);
+  }
+  // 1,000 repeticiones: conteos por categoría ~ Binomial(n, p)
+  for (const l of lados) {
+    const rec = [];
+    let gana = 0;
+    for (let v = 0; v < 1000; v++) {
+      let g = 0;
+      cats.forEach((cat, i) => { const k = binom(n, cat[3]); if (k) g += k * l.premio[i]; });
+      rec.push(g / (cfg.costo * n));
+      if (g > cfg.costo * n) gana++;
+    }
+    rec.sort((x, y) => x - y);
+    l.vidas = { p10: rec[100], p50: rec[500], p90: rec[900], gana: gana / 1000 };
+    l.ev = cats.reduce((s, cat, i) => s + cat[3] * l.premio[i], 0);
+  }
+  const jugadasMayor = n * (1 + cfg.juegos.revancha + cfg.juegos.revanchita);
+  return { n, cats, lados, cfg, pMayor: 1 - Math.pow(1 - PNAT[6], jugadasMayor) };
+}
+
+function graficaSaldo(r) {
+  const W = 900, H = 270, m = { l: 78, r: 16, t: 14, b: 34 };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const todos = r.lados.flatMap((l) => l.saldo.map((s) => s[1]));
+  let lo = Math.min(0, ...todos), hi = Math.max(0, ...todos);
+  if (hi - lo < 1) hi = lo + 1;
+  const paso = (() => { const crudo = (hi - lo) / 4, e = Math.pow(10, Math.floor(Math.log10(crudo))); return [1, 2, 2.5, 5, 10].map((k) => k * e).find((k) => k >= crudo); })();
+  lo = Math.floor(lo / paso) * paso; hi = Math.ceil(hi / paso) * paso;
+  const x = (t) => m.l + (t / r.n) * pw, y = (v) => m.t + ((hi - v) / (hi - lo)) * ph;
+  const porAnio = 52 * r.cfg.semana;
+  let s = "";
+  for (let v = lo; v <= hi + 1e-6; v += paso) {
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--raya)" stroke-width="${Math.abs(v) < 1e-6 ? 1.4 : 0.8}"/>`;
+    s += `<text x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--tinta-3)" font-family="var(--f-num)">${pesos$(v)}</text>`;
+  }
+  const marcas = r.cfg.anios <= 1 ? [0, 0.25, 0.5, 0.75, 1] : Array.from({ length: 6 }, (_, i) => Math.round((r.cfg.anios * i) / 5));
+  [...new Set(marcas)].forEach((a) => {
+    s += `<text x="${x(a * porAnio)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--tinta-3)" font-family="var(--f-num)">${a < 1 && a > 0 ? Math.round(a * 12) + " m" : a + (a === 1 ? " año" : " años")}</text>`;
+  });
+  r.lados.forEach((l, i) => {
+    const d = l.saldo.map(([t, v], j) => `${j ? "L" : "M"}${x(t).toFixed(1)},${y(v).toFixed(1)}`).join("");
+    s += `<path d="${d}" fill="none" stroke="var(--serie-${i ? "b" : "a"})" stroke-width="2" stroke-linejoin="round"/>`;
+  });
+  s += `<line id="cruz" x1="0" x2="0" y1="${m.t}" y2="${m.t + ph}" stroke="var(--tinta-3)" stroke-width="1" visibility="hidden"/>`;
+  r.lados.forEach((_, i) => { s += `<circle id="pt${i}" r="4.5" fill="var(--serie-${i ? "b" : "a"})" stroke="var(--hoja)" stroke-width="2" visibility="hidden"/>`; });
+  s += `<rect id="capa" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/>`;
+  return { svg: `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Saldo acumulado de las dos combinaciones">${s}</svg>`, x, y, W, H };
+}
+
+function pintarSim(r) {
+  const [A, B] = r.lados;
+  const nombre = ["Tu combinación", $("#sim-b").value === "fechas" ? "Fechas de cumpleaños" : "Combinación al azar"];
+  const pop = (l) => (patrones(l.c).length ? "patrón muy jugado" : `${fmt(l.p)}× popularidad`);
+  const gastado = r.cfg.costo * r.n;
+  const lado = (l, i) => {
+    const neto = l.ganado - gastado, mom = [...l.momentos].sort((a, b) => b.monto - a.monto).slice(0, 5);
+    const anio = (t) => Math.floor(t / (52 * r.cfg.semana)) + 1;
+    return `<div class="lado" style="--serie:var(--serie-${i ? "b" : "a"})">
+      <div class="lado-cabeza"><span class="etiqueta">${nombre[i]}</span><span class="estado">${pop(l)}</span></div>
+      <span class="combi-sim">${l.c.map(dd).join(" ")}</span>
+      <div class="cifras">
+        <div><span class="etiqueta">Gastaste</span><span class="v">${pesos$(gastado)}</span></div>
+        <div><span class="etiqueta">Ganaste</span><span class="v">${pesos$(l.ganado)}</span></div>
+        <div><span class="etiqueta">Resultado</span><span class="v ${neto < 0 ? "neg" : "pos"}">${neto >= 0 ? "+" : ""}${pesos$(neto)}</span></div>
+        <div><span class="etiqueta">Recuperaste</span><span class="v">${fmt((l.ganado / gastado) * 100, 0)}%</span></div>
+      </div>
+      <div class="momentos">${mom.length ? mom.map((e) => `<div class="momento"><span class="punto"></span><span>Año ${anio(e.t)}: ${e.juego}, ${e.etiqueta}</span><b class="num">${pesos$(e.monto)}</b></div>`).join("") : `<span class="notas-sim">Ningún premio de 4 aciertos o más en esta simulación.</span>`}</div>
+    </div>`;
+  };
+  const filas = r.cats.map((cat, i) => {
+    const esp = r.n * cat[3];
+    const celda = (l) => `<td class="der num ${l.cuenta[i] ? "" : "cero"}">${l.cuenta[i].toLocaleString("es-MX")}</td>`;
+    const pago = (l) => `<td class="der num">${cat[4] === "mayor" ? "bolsa" : pesos$(l.premio[i])}</td>`;
+    const grupo = i === 0 || r.cats[i - 1][1] !== cat[1] ? `<tr class="grupo"><td colspan="7">${cat[1]}</td></tr>` : "";
+    return `${grupo}<tr><td>${cat[2]}</td><td class="der num">${unoEn(cat[3])}</td><td class="der num">${esp < 10 ? fmt(esp, esp < 0.1 ? 4 : 2) : Math.round(esp).toLocaleString("es-MX")}</td>${celda(A)}${celda(B)}${pago(A)}${pago(B)}</tr>`;
+  }).join("");
+  const vida = (l, i) => `<div class="vida" style="--serie:var(--serie-${i ? "b" : "a"})">
+      <span class="etiqueta">${nombre[i]}</span>
+      <span>En la mitad de los casos recuperas <b class="num">${fmt(l.vidas.p50 * 100, 0)}%</b> o menos de lo que gastas.</span>
+      <div class="rango" title="80% de los casos"><i style="left:${Math.min(100, l.vidas.p10 * 100)}%;width:${Math.max(1, Math.min(100, l.vidas.p90 * 100) - Math.min(100, l.vidas.p10 * 100))}%"></i><b style="left:${Math.min(100, l.vidas.p50 * 100)}%"></b></div>
+      <span class="notas-sim">80% de los casos: entre ${fmt(l.vidas.p10 * 100, 0)}% y ${fmt(l.vidas.p90 * 100, 0)}% recuperado (la barra va de 0% a 100%) · terminas con ganancia: ${fmt(l.vidas.gana * 100, 1)}%</span>
+      <span class="notas-sim">Valor esperado: cada ${pesos$(r.cfg.costo)} que pagas te regresan ${pesos$(l.ev)} en promedio (${fmt((l.ev / r.cfg.costo) * 100, 0)}%).</span>
+    </div>`;
+  const g = graficaSaldo(r);
+  $("#sim-resultado").innerHTML = `
+    <div style="display:grid;gap:22px">
+      <p class="explica">Simulación de <b>${r.n.toLocaleString("es-MX")} sorteos</b> (${r.cfg.anios} ${r.cfg.anios === 1 ? "año" : "años"}, ${r.cfg.semana} por semana) a ${pesos$(r.cfg.costo)} por boleto. Las dos combinaciones jugaron exactamente los mismos sorteos.</p>
+      <div class="duelo">${lado(A, 0)}${lado(B, 1)}</div>
+      <div class="saldo" id="saldo">
+        <div class="leyenda"><span><i style="background:var(--serie-a)"></i>${nombre[0]}</span><span><i style="background:var(--serie-b)"></i>${nombre[1]}</span><span class="notas-sim">Saldo acumulado: lo ganado menos lo gastado</span></div>
+        ${g.svg}
+        <div class="tip" id="tip-saldo" hidden></div>
+      </div>
+      <div class="tabla-sim"><table>
+        <thead><tr><th>Aciertos</th><th class="der">Probabilidad por sorteo</th><th class="der">Veces esperadas</th><th class="der">Tu comb.</th><th class="der">Comparación</th><th class="der">Pago tu comb.</th><th class="der">Pago comparación</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table></div>
+      <div style="display:grid;gap:12px">
+        <h3>Si repitieras esta misma simulación 1,000 veces</h3>
+        <div class="vidas">${vida(A, 0)}${vida(B, 1)}</div>
+        <p class="notas-sim">Probabilidad de ganar al menos un premio mayor en ${r.cfg.anios} ${r.cfg.anios === 1 ? "año" : "años"}: <b class="num">${unoEn(r.pMayor)}</b>, igual para cualquier combinación.</p>
+      </div>
+      <p class="explica"><b>Cómo leerlo:</b> las dos combinaciones tienen la misma probabilidad en cada categoría. Las diferencias en la columna de aciertos son pura suerte de esta simulación. Lo que cambia es el <b>pago</b> de 4 y 5 aciertos, que se reparte entre todos los que aciertan: con una combinación poco jugada lo compartes con menos gente. Montos antes de impuestos; los premios de 2 y 3 aciertos son fijos.</p>
+    </div>`;
+  // cruz y tooltip
+  const svg = $("#saldo svg"), tip = $("#tip-saldo"), caja = $("#saldo");
+  const mover = (ev) => {
+    const b = svg.getBoundingClientRect(), xs = ((ev.clientX - b.left) / b.width) * g.W;
+    const serie = A.saldo; let k = 0;
+    for (let j = 1; j < serie.length; j++) if (Math.abs(g.x(serie[j][0]) - xs) < Math.abs(g.x(serie[k][0]) - xs)) k = j;
+    const t = serie[k][0], cx = g.x(t);
+    const cruz = svg.querySelector("#cruz"); cruz.setAttribute("x1", cx); cruz.setAttribute("x2", cx); cruz.setAttribute("visibility", "visible");
+    r.lados.forEach((l, i) => { const c = svg.querySelector(`#pt${i}`); c.setAttribute("cx", cx); c.setAttribute("cy", g.y(l.saldo[k][1])); c.setAttribute("visibility", "visible"); });
+    const anio = t / (52 * r.cfg.semana);
+    tip.innerHTML = `${anio < 1 ? Math.max(1, Math.round(anio * 12)) + " meses" : fmt(anio, 1) + " años"} · sorteo ${t.toLocaleString("es-MX")}<br>${nombre[0]}: ${pesos$(A.saldo[k][1])}<br>${nombre[1]}: ${pesos$(B.saldo[k][1])}`;
+    tip.style.left = `${b.left - caja.getBoundingClientRect().left + (cx / g.W) * b.width}px`;
+    tip.style.top = `${b.top - caja.getBoundingClientRect().top + (g.y(Math.max(A.saldo[k][1], B.saldo[k][1])) / g.H) * b.height}px`;
+    tip.hidden = false;
+  };
+  const capa = svg.querySelector("#capa");
+  capa.addEventListener("mousemove", mover);
+  capa.addEventListener("click", mover);
+  capa.addEventListener("mouseleave", () => { tip.hidden = true; svg.querySelectorAll("#cruz, circle").forEach((e) => e.setAttribute("visibility", "hidden")); });
+}
+
+function correrSim() {
+  if (!simA) return;
+  const B = $("#sim-b").value === "fechas" ? FECHAS : alAzar();
+  pintarSim(simular(simA, B, leerConfig()));
+}
+function tomarDelBoleto() {
+  if (elegidos.length === K) simA = [...elegidos];
+  else if (!simA) simA = generar(10);
+  $("#sim-a").textContent = simA.map(dd).join(" ");
+}
+
+// ---------- textos con datos ----------
+function textos() {
+  const M = DATOS.meta, g = Math.exp(DATOS.logGamma), d = Math.exp(DATOS.logDelta);
+  const masJ = DATOS.pesos.map((w, i) => [w, i + 1]).sort((a, b) => b[0] - a[0]);
+  $("#bloques").innerHTML = `
+    <div class="bloque"><span class="etiqueta">Los datos</span><span class="dato">${M.combinaciones.toLocaleString("es-MX")} combinaciones ganadoras</span>
+      <p>Para cada sorteo de Melate y Revancha entre ${M.desde.slice(0, 4)} y ${M.hasta.slice(0, 4)} se contaron los ganadores de 2, 3, 4 y 5 aciertos. Si salen números que mucha gente juega, hay más ganadores de lo que daría el puro azar. Así se mide cuánto se juega cada combinación sin ver los boletos.</p></div>
+    <div class="bloque"><span class="etiqueta">Lo que aprendió</span><span class="dato">${fmt(DATOS.q * 100, 0)}% juega al azar</span>
+      <p>El resto elige sus números: el ${masJ[0][1]} es el favorito (${fmt(masJ[0][0], 1)}×), seguido del ${masJ[1][1]} y el ${masJ[2][1]}. La gente evita los números seguidos (cada pareja consecutiva baja la popularidad a ${fmt(g)}×) y reparte sus números entre decenas (cada par en la misma decena: ${fmt(d)}×).</p></div>
+    <div class="bloque"><span class="etiqueta">Qué tan bien funciona</span><span class="dato">Explica ~55% de la popularidad</span>
+      <p>Se entrenó con sorteos de 2014–2022 y se probó con 1,164 combinaciones ganadoras de 2023–2026 que nunca vio. Acierta en el orden (qué combinación se jugó más que otra) en buena medida, aunque no es exacto para cada combinación. Con las sugeridas, el premio esperado al acertar 4 o 5 números es ~26–36% mayor que con una combinación al azar.</p></div>`;
+  $("#pie").innerHTML = `<span>Diseño, análisis y modelo: Fernando Hernández Esquivel, en colaboración con Claude (Anthropic).</span>
+    <span>Proyecto personal de análisis estadístico. Sin relación con Lotería Nacional ni con Pronósticos para la Asistencia Pública.</span>
+    <span>Modelo actualizado con resultados hasta el concurso ${M.ultimo_concurso} (${M.fecha_ultimo}). Juega con responsabilidad.</span>`;
+}
+
+// ---------- inicio ----------
+const calorGuardado = almacen.leer("calor") === "1";
+const exigenciaGuardada = almacen.leer("exigencia");
+if (exigenciaGuardada) $("#exigencia").value = exigenciaGuardada;
+$("#ver-calor").checked = calorGuardado;
+aplicarCalor(calorGuardado);
+$("#ver-calor").addEventListener("change", (e) => { aplicarCalor(e.target.checked); almacen.guardar("calor", e.target.checked ? "1" : "0"); });
+$("#exigencia").addEventListener("change", (e) => { almacen.guardar("exigencia", e.target.value); llenarLista(); });
+$("#generar").addEventListener("click", () => { const c = generar(+$("#exigencia").value); if (c) poner(c); });
+$("#borrar").addEventListener("click", () => poner([]));
+$("#generar-lista").addEventListener("click", llenarLista);
+textos();
+grafica();
+llenarLista();
+poner(generar(+$("#exigencia").value) || []);
+$("#premios-desde").textContent = DATOS.premios.desde;
+$("#sim-bolsa").value = Math.round(DATOS.premios.mayor_mediana / 1e6);
+$("#sim-tomar").addEventListener("click", () => { tomarDelBoleto(); correrSim(); });
+$("#form-sim").addEventListener("submit", (e) => { e.preventDefault(); correrSim(); });
+["#sim-b", "#sim-anios", "#sim-semana", "#j-revancha", "#j-revanchita"].forEach((s) => $(s).addEventListener("change", correrSim));
+tomarDelBoleto();
+correrSim();
+</script>

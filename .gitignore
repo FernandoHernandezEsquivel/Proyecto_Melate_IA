@@ -1,0 +1,13 @@
+# Entorno
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+
+# Datos descargados de terceros: no se redistribuyen, se regeneran con los scrapers
+data/raw/html/
+data/raw/premios/
+data/processed/
+
+# Archivos generados
+reports/*.html
+app/boleto_poco_jugado.html
