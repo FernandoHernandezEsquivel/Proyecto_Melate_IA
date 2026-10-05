@@ -2,7 +2,7 @@
 
 **Autor:** Fernando Hernández Esquivel, en colaboración con Claude (Anthropic).
 
-**App en línea:** https://fernandohernandezesquivel.github.io/proyecto-melate-ia/
+**App en línea:** https://fernandohernandezesquivel.github.io/Proyecto_Melate_IA/
 
 Análisis estadístico de más de 40 años de sorteos de Melate, Revancha y Revanchita (México) y un modelo que estima **qué tan jugada es cada combinación**. El análisis confirma que es imposible predecir qué números van a salir. Lo que sí se puede elegir es una combinación que poca gente juega, para no compartir el premio si ganas. La app **Boleto Poco Jugado** usa este modelo para sugerir combinaciones poco jugadas y para simular años de juego con premios reales.
 
